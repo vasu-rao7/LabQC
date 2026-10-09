@@ -1,92 +1,118 @@
 ## MAIN UTILITY FUNCTION
 
 """
-    plateerrorGP(data::Matrix{T}, controls::BitMatrix, correction::Function) where T <: Real
+    plateerrorGP(data::Matrix{T}, controls::BitMatrix, correction::Function; kwargs...) where T <: Real
 
-# Arguments 
-- data: Matrix of raw numeric data
-- controls: BitMatrix of control locations 
-- correction: method used for correction (absolute or relative)
-- verbose: returns a dictionary containing the gp object, a matrix of the GP's mean error predictions, and a matrix of the GP's standard deviations. The dictionary has keys "gp", "mean_error", and "sd_error"
-- ls: lengthscale of isotropic Mater52 GP kernel
-- lb_ls: lower bound of lengthscale
-- ub_ls: upper bound of lengthscale
+Fit a Gaussian process to the control wells of `data` and use it to estimate, and
+remove, position-dependent error at every well.
 
+# Arguments
+- `data`: Matrix of raw numeric data
+- `controls`: BitMatrix of control locations
+- `correction`: method used for correction ([`absolute`](@ref) or [`relative`](@ref))
+
+# Keyword Arguments
+- `verbose`: also return a Dict of diagnostics, with keys `"gp"`, `"mean_error"`,
+  `"var_f"` (latent posterior variance), `"var_y"` (predictive variance, including
+  observation noise) and `"sd_error"` (`sqrt` of `var_f`).
+- `ls`, `lb_ls`, `ub_ls`: lengthscale of the isotropic Matern 5/2 kernel and its
+  optimisation bounds, in the same units as `pitch`.
+- `pitch`: distance between neighbouring wells. Defaults to `1.0`, i.e. well
+  indices. Pass `well_pitch(size(data)...)` to fit in mm instead — and change the
+  lengthscale bounds to match, since they are expressed in the same units.
+- `optimize`: whether to fit kernel hyperparameters. `false` uses `ls`, `sd_guess`
+  and `noise` as given.
+
+Only control wells train the model, but every well is corrected.
 """
-function plateerrorGP(data::Matrix{T}, controls::BitMatrix, correction::Function; verbose=false, ls=3.0, lb_ls=2.0, ub_ls=6.0,kwargs...) where T <: Real
+function plateerrorGP(data::Matrix{T}, controls::BitMatrix, correction::Function;
+                      verbose = false, ls = 3.0, lb_ls = 2.0, ub_ls = 6.0,
+                      pitch = 1.0, optimize = true, kwargs...) where T <: Real
+
+    ncontrols = sum(controls)
+    ncontrols == 0 && error("plateerrorGP: `controls` selects no wells; " *
+                            "a plate with no controls of this class cannot be corrected")
+    ncontrols < 3 && error("plateerrorGP: only $ncontrols control well(s); at least 3 are " *
+                           "needed to fit a lengthscale, signal and noise")
+    ncontrols < 6 && @warn "plateerrorGP: fitting $ncontrols control wells; " *
+                           "hyperparameters are weakly identified below ~6 controls"
 
     df = build_df(data, controls)
-    # df = DataFrame(Value = values, Row = row_indices, Column = col_indices, Control = controls)
-    avg_control = median(filter(row -> row.Control==1, df).Value) #calculate median value of set of controls
+    avg_control = median(filter(row -> row.Control == 1, df).Value) #calculate median value of set of controls
     df = calculate_controls_error(avg_control, df, correction) #calculate absolute and relative errors and add to dataframe
-    # Construct Training inputs and outputs
-    train_out = Float64[]
-    for row in eachrow(df)
-        if row.Control
-            push!(train_out, row.CorrectionValue_Train)
-        end
-    end
-    train_filter_df = filter(row -> row.Control == true, df)
-    train_in = copy(transpose(Matrix(train_filter_df[:, [:Column, :Row]])))
-    train_in = convert(Matrix{Float64}, train_in)
+
+    # Construct training inputs and outputs from the control wells only
+    train_df = filter(row -> row.Control == true, df)
+    train_out = Float64.(train_df.CorrectionValue_Train)
+    train_in = convert(Matrix{Float64}, copy(transpose(Matrix(train_df[:, [:Column, :Row]])))) .* pitch
 
     # Fit and optimize GP model
-    gp = makeGP(train_in, train_out; lengthscale=ls, lb_lengthscale=lb_ls, ub_lengthscale=ub_ls,kwargs...)
+    gp = makeGP(train_in, train_out; lengthscale = ls, lb_lengthscale = lb_ls,
+                ub_lengthscale = ub_ls, optimize = optimize, kwargs...)
 
-    # Get GP predictions for all wells and add these values to dataframe
-    error_μ = Float64[]
-    error_sd = Float64[]
-    val_adjusted = Float64[]
+    # Predict at every well in one call. Looping per well repeats the same
+    # triangular solve once per well, which dominates runtime in large sweeps.
+    pred_in = convert(Matrix{Float64}, copy(transpose(Matrix(df[:, [:Column, :Row]])))) .* pitch
+    error_mu, var_f = predict_f(gp, pred_in)
+    var_y = var_f .+ exp(2 * gp.logNoise.value)
 
-    for i in eachrow(df)
-        h = hcat(i.Column, i.Row)
-        h = convert(Matrix{Float64}, h)
-        pred_pt=copy(transpose(h))
-        pred_error_μ, pred_error_sd = predict_y(gp, pred_pt)
-        if correction == absolute
-            adjustby = pred_error_μ[1]
-        else
-            adjustby = i.Value * pred_error_μ[1]
-        end
-        val_adj = i.Value - adjustby
-        push!(error_μ, pred_error_μ[1])
-        push!(error_sd, pred_error_sd[1])
-        push!(val_adjusted, val_adj)
-    end
+    # `absolute` error is an offset; `relative` error is a scaling of the observed value
+    adjustby = correction == absolute ? error_mu : df.Value .* error_mu
 
-    df.Error = error_μ
-    df.ErrorSD = error_sd
-    df.ValueAdjusted = val_adjusted
+    df.Error = error_mu
+    df.VarF = var_f
+    df.VarY = var_y
+    df.ErrorSD = sqrt.(max.(var_f, 0.0))
+    df.ValueAdjusted = df.Value .- adjustby
 
-    extra_outputs=Dict()
+    d_corrected = zeros(Float64, size(data)...)
+    d_mean_error = zeros(Float64, size(data)...)
+    d_var_f = zeros(Float64, size(data)...)
+    d_var_y = zeros(Float64, size(data)...)
+    d_sd_error = zeros(Float64, size(data)...)
 
-    d_corrected = zeros(Float64, size(data)[1], size(data)[2])
-    d_mean_error = zeros(Float64, size(data)[1], size(data)[2])
-    d_sd_error = zeros(Float64, size(data)[1], size(data)[2])
-    
     for row in eachrow(df)
         d_corrected[row.Row, row.Column] = row.ValueAdjusted
         d_mean_error[row.Row, row.Column] = row.Error
+        d_var_f[row.Row, row.Column] = row.VarF
+        d_var_y[row.Row, row.Column] = row.VarY
         d_sd_error[row.Row, row.Column] = row.ErrorSD
     end
+
     if verbose == true
-        extra_outputs["gp"]=gp
-        extra_outputs["mean_error"] = d_mean_error
-        extra_outputs["sd_error"] = d_sd_error
-        return d_corrected, extra_outputs
+        return d_corrected, Dict("gp" => gp,
+                                 "mean_error" => d_mean_error,
+                                 "var_f" => d_var_f,
+                                 "var_y" => d_var_y,
+                                 "sd_error" => d_sd_error)
     end
     return d_corrected
-    
+
 end
 
-function makeGP(train_in, train_out; lengthscale=3.0, sd_guess=std(train_out), lb_lengthscale=2.0, ub_lengthscale=6.0, lb_std = std(train_out)/5, ub_std=std(train_out)*3,noise=-2.0,kwargs...)
-    mZero = MeanZero()
+"""
+    makeGP(train_in, train_out; kwargs...)
 
+Zero-mean GP with an isotropic Matern 5/2 kernel over well positions.
+
+`optimize = false` skips hyperparameter fitting and uses `lengthscale`, `sd_guess`
+and `noise` as supplied. No catch-all keyword argument is accepted: a misspelled
+hyperparameter must raise a `MethodError` rather than being silently discarded,
+because `GaussianProcesses.optimize!` drops unrecognised keywords without warning
+when kernel bounds are given.
+"""
+function makeGP(train_in, train_out; lengthscale = 3.0, sd_guess = signal_guess(train_out),
+                lb_lengthscale = 2.0, ub_lengthscale = 6.0,
+                lb_std = sd_guess / 5, ub_std = sd_guess * 3,
+                noise = -2.0, optimize = true)
+    mZero = MeanZero()
 
     kern = Matern(5/2, log(lengthscale), log(sd_guess))
 
     # Fit a GP model to training data
-    gp = GP(train_in,train_out,mZero,kern,noise)
+    gp = GP(train_in, train_out, mZero, kern, noise)
+
+    optimize || return gp
 
     # Define kernel bounds for GP hyperparam optimization
     kb = [
@@ -95,9 +121,23 @@ function makeGP(train_in, train_out; lengthscale=3.0, sd_guess=std(train_out), l
         ]
 
     # Optimize GP
-    GaussianProcesses.optimize!(gp; domean=false, kernbounds = kb,kwargs...)
+    GaussianProcesses.optimize!(gp; domean = false, kernbounds = kb)
 
     return gp
+end
+
+"""
+    signal_guess(train_out) -> Float64
+
+Starting signal standard deviation. `std` is degenerate for the small control sets
+this model is fit to — undefined for one well, and exactly zero when every control
+reads the same — and `log(0)` produces a kernel full of `NaN`, so fall back to a
+small positive value in those cases.
+"""
+function signal_guess(train_out)
+    length(train_out) < 2 && return 1.0
+    s = std(train_out)
+    return (!isfinite(s) || s <= 0) ? 1.0 : s
 end
 
 function build_df(data::Matrix, controls::BitMatrix)
@@ -108,13 +148,11 @@ function build_df(data::Matrix, controls::BitMatrix)
     values = Float64[]
     row_indices = Int[]
     col_indices = Int[]
-    is_control = Bool[]
 
 
     # Iterate over the matrix and fill the vectors
     for idx in CartesianIndices(data)
             push!(values, data[idx])
-            push!(is_control,controls[idx])
             push!(row_indices, idx[1])
             push!(col_indices, idx[2])
 
@@ -150,9 +188,3 @@ end
 
 absolute(x,y) = x-y 
 relative(x,y) = (x-y)/x 
-
-
-
-
-
-
