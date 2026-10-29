@@ -6,13 +6,15 @@
 # Writes to results/ (PNG for viewing, PDF for the manuscript):
 #   fig_exp1_placement      GP skill per layout, by placement objective (n = 12, 40)
 #   fig_exp2_coverage       GP 95% interval coverage vs number of controls
-#   fig_exp2_sd_vs_error    posterior sd vs realised RMSE, one point per layout
-#
-# Posterior sd is the latent-function sd (`predict_f`), without the noise term, so
-# it is not expected to match RMSE in level; Exp 2 asks whether it ranks layouts.
+#   fig_exp2_sd_vs_error    predictive sd vs realised RMSE, one point per layout
 #   fig_exp3_skill_vs_n     skill vs number of controls, GP against simple baselines
 #
-# All panels use absolute correction. Relative correction is in the summary tables.
+# Each plate is shown on the scale its correction uses: the negative plate's error is
+# additive (technical), the positive and gas plates' error is relative (biological),
+# matching `gp_correction`. The other scale is in the summary tables.
+#
+# Coverage and the sd-vs-error panels use the predictive sd (latent sd plus the
+# fitted per-well noise), because held-out truth is an observed well, noise included.
 
 using CSV, DataFrames, Statistics, StatsBase, Plots, Printf, Random
 gr()
@@ -41,9 +43,15 @@ function save(p, name)
     @info "wrote" figure = name
 end
 
-by_n   = filter(r -> r.correction == "absolute", CSV.read(joinpath(OUT, "summary_by_n.csv"), DataFrame))
-layout = filter(r -> r.correction == "absolute", CSV.read(joinpath(OUT, "per_layout_gp.csv"), DataFrame))
-surf   = filter(r -> r.correction == "absolute", CSV.read(joinpath(OUT, "surfaces.csv"), DataFrame))
+const SCALE = Dict("negative" => "absolute", "positive" => "relative", "gas" => "relative")
+const SCALE_LABEL = Dict("absolute" => "additive", "relative" => "relative")
+const UNIT = Dict("absolute" => "OD", "relative" => "fraction of well")
+on_scale(df) = filter(r -> r.correction == SCALE[r.experiment], df)
+
+by_n   = on_scale(CSV.read(joinpath(OUT, "summary_by_n.csv"), DataFrame))
+layout = on_scale(CSV.read(joinpath(OUT, "per_layout_gp.csv"), DataFrame))
+surf   = on_scale(CSV.read(joinpath(OUT, "surfaces.csv"), DataFrame))
+ptitle(e, title) = "$title ($(SCALE_LABEL[SCALE[e]]))"
 
 # Ceiling: no smooth interpolator recovers the nugget, so skill is bounded by the
 # structured share of variance (median over a plate type's surfaces).
@@ -57,7 +65,7 @@ const MODELS = [("gp", "GP (this method)", C1, :circle),
 const YLIM3 = (-0.7, 0.85)
 
 panels = map(enumerate(PLATES)) do (i, (e, title))
-    p = plot(title = title, xscale = :log10, xticks = NTICKS, xlims = (2.6, 58), ylims = YLIM3,
+    p = plot(title = ptitle(e, title), xscale = :log10, xticks = NTICKS, xlims = (2.6, 58), ylims = YLIM3,
              xlabel = "number of control wells", ylabel = i == 1 ? "skill vs. control median" : "",
              legend = i == 1 ? :topleft : false)
     hline!(p, [0], color = RULE, lw = 1, label = "")
@@ -90,7 +98,7 @@ for (row, (e, title)) in enumerate(PLATES)
     sub = filter(r -> r.experiment == e && r.n in (12, 40), layout)
     lo, hi = extrema(sub.skill); pad = 0.06 * (hi - lo)
     for n in (12, 40)
-        p = plot(title = "$title, n = $n", ylims = (lo - pad, hi + pad), legend = false,
+        p = plot(title = "$(ptitle(e, title)), n = $n", ylims = (lo - pad, hi + pad), legend = false,
                  ylabel = n == 12 ? "GP skill per layout" : "",
                  xticks = (1:length(OBJ), row == length(PLATES) ? last.(OBJ) : fill("", length(OBJ))),
                  xrotation = 40, xlims = (0.4, length(OBJ) + 0.6), grid = :y)
@@ -118,10 +126,13 @@ hline!(p, [0.95], color = MUTED, lw = 1, ls = :dash, label = "")
 annotate!(p, 2.75, 0.975, text("nominal 0.95", 7, MUTED, :left))
 for ((e, title), c, shape) in zip(PLATES, (C1, C2, C3), (:circle, :utriangle, :rect))
     d = sort(filter(r -> r.experiment == e, gp), :n)
+    # faint: the 2026-09-04 version, smooth-surface sd only (per-well noise left out)
+    plot!(p, d.n, d.cover95_f_mean, color = c, lw = 1, ls = :dot, alpha = 0.6, label = "")
     plot!(p, d.n, d.cover95_mean, color = c, lw = 2, marker = shape, ms = 4,
-          markerstrokewidth = 0, label = title)
+          markerstrokewidth = 0, label = ptitle(e, title))
     annotate!(p, 44, last(d.cover95_mean), text(split(title)[1], 7, INK, :left))
 end
+annotate!(p, 2.75, 0.05, text("dotted: noise left out (old version)", 7, MUTED, :left))
 save(p, "fig_exp2_coverage")
 
 # --- Experiment 2b: does posterior sd predict realised error? ------------------
@@ -131,8 +142,8 @@ for (row, (e, title)) in enumerate(PLATES), n in (12, 40)
     ρ = corspearman(d.post_sd, d.rmse)
     local p = scatter(d.post_sd, d.rmse, color = C1, alpha = 0.45, ms = 3, markerstrokewidth = 0,
                 legend = false, title = @sprintf("%s, n = %d  ·  ρ = %.2f", first(split(title)), n, ρ),
-                xlabel = row == length(PLATES) ? "mean GP posterior sd (OD)" : "",
-                ylabel = n == 12 ? "realised RMSE (OD)" : "")
+                xlabel = "mean GP predictive sd ($(UNIT[SCALE[e]]))",
+                ylabel = n == 12 ? "realised RMSE ($(UNIT[SCALE[e]]))" : "")
     push!(panels, p)
 end
 save(plot(panels..., layout = (3, 2), size = (900, 900), left_margin = 4Plots.mm,

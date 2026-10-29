@@ -42,7 +42,7 @@ function build_surfaces(rawdir::AbstractString; thin::Int = 4,
               Dict{String,Any}("plate" => "pos_plate", "metric" => "od",
                                "read" => t, "time_h" => p.times_h[t]))))
     end
-    maxod = [maximum(skipmissing(p.values[i, j, :])) for i in 1:8, j in 1:12]
+    maxod = [maximum(skipmissing(p.values[i, j, :])) for i in axes(p.values, 1), j in axes(p.values, 2)]
     push!(base, ("positive", Surface("pos_maxOD", maxod, relative, :positives,
           Dict{String,Any}("plate" => "pos_plate", "metric" => "maxOD",
                            "read" => 0, "time_h" => NaN))))
@@ -88,7 +88,14 @@ function layout_bank(wells::BitMatrix, ns, objspecs; nlayouts = 30, seed = 20260
                      cache::Union{Nothing,String} = nothing)
     if cache !== nothing && isfile(cache)
         @info "layout bank loaded from cache" file = basename(cache)
-        return deserialize(cache)
+        lb = deserialize(cache)
+        # the cache is trusted on file existence alone, so check it was built for this run
+        want = Set((n, obj, lam) for n in ns if 2n < sum(wells) for (obj, lam) in objspecs)
+        Set(keys(lb.bank)) == want ||
+            error("layout cache $(basename(cache)) was built for different control counts or objectives")
+        all(v -> length(v) == nlayouts, values(lb.bank)) ||
+            error("layout cache $(basename(cache)) does not hold $nlayouts layouts per condition")
+        return lb
     end
     bounds = Dict{Int,Any}()
     bank = Dict{Tuple{Int,String,Float64},Vector{PlateArray}}()
@@ -114,10 +121,45 @@ function layout_bank(wells::BitMatrix, ns, objspecs; nlayouts = 30, seed = 20260
     return result
 end
 
+"""
+    write_run_info(outdir; repo) -> String
+
+Record exactly which code produced the results in `outdir`: the commit, the diff
+against it, and the full text of source files git does not track yet. Each start
+appends to `RUN_INFO.txt` and writes its own timestamped patch, so a resumed run
+keeps the record of the code that wrote its earlier rows.
+"""
+function write_run_info(outdir::AbstractString; repo = joinpath(@__DIR__, "..", ".."))
+    stamp = Dates.format(now(), "yyyymmddTHHMMSS")
+    sha = readchomp(`git -C $repo rev-parse HEAD`)
+    paths = ["src", "experiments", "test", "Project.toml", "Manifest.toml"]
+    io = IOBuffer()
+    write(io, read(`git -C $repo diff HEAD -- $paths`, String))
+    untracked = split(readchomp(`git -C $repo ls-files --others --exclude-standard -- $paths`), '\n'; keepempty = false)
+    for f in untracked
+        println(io, "\n=== untracked file: ", f, " ===")
+        write(io, read(joinpath(repo, f), String))
+    end
+    patch = String(take!(io))
+    name = isempty(patch) ? "none" : "RUN_DIFF_$stamp.patch"
+    isempty(patch) || write(joinpath(outdir, name), patch)
+    open(joinpath(outdir, "RUN_INFO.txt"), "a") do f
+        println(f, "started: $(now())  commit: $sha  uncommitted changes and untracked files: $name")
+    end
+    return name
+end
+
 """Write `rows` to `path`, creating the header on first use."""
 function append_rows(path::AbstractString, rows::Vector{<:NamedTuple})
     isempty(rows) && return
     mkpath(dirname(path))
+    if isfile(path)
+        # appending under a different header would silently misalign every column
+        have = String.(propertynames(CSV.File(path; limit = 1)))
+        want = String.(collect(keys(first(rows))))
+        have == want || error("$(basename(path)) has columns $have, new rows have $want; " *
+                              "archive the old file before rerunning with a changed schema")
+    end
     CSV.write(path, rows; append = isfile(path), writeheader = !isfile(path))
 end
 

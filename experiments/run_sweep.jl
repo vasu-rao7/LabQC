@@ -20,13 +20,18 @@ const THIN = 4
 mkpath(OUT)
 @info "sweep starting" time = now() ns = NS nlayouts = NLAYOUTS thin = THIN
 
+# record exactly which code produced these results (appended on every start, resumes included)
+write_run_info(OUT)
+
 # ---------------------------------------------------------------- surfaces
 surfaces = build_surfaces(RAW; thin = THIN)
 @info "surfaces built" total = length(surfaces)
 
 srows = NamedTuple[]
 for (exp, s) in surfaces
-    vd = variance_decomposition(s.values)
+    # decompose the error on the scale it is scored on: identical to raw OD for
+    # `absolute` (a shift), but fractional deviation for `relative`
+    vd = variance_decomposition(truth_surface(s.values, trues(size(s.values)), s.correction))
     push!(srows, (experiment = exp, surface = s.id, plate = s.meta["plate"],
                   metric = s.meta["metric"], read = s.meta["read"], time_h = s.meta["time_h"],
                   correction = string(s.correction), class = string(s.class),

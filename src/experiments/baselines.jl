@@ -1,14 +1,37 @@
 # Alternative error-surface predictors, for comparison against the GP.
 #
-# Each takes the measured plate, a control mask, and the control-centred truth, and
-# returns a predicted error at every well. All are fit ONLY on the control wells, so
-# they face exactly the problem the GP faces.
-
-"""Predict no spatial error anywhere. The null model, and the skill-score denominator."""
-predict_constant(G, mask) = zeros(Float64, size(G))
+# Each takes the measured plate, a control mask, and the correction whose scale the
+# errors live on, and returns a predicted error at every well. All are fit ONLY on
+# the control wells, so they face exactly the problem the GP faces, on the same scale.
 
 """
-    predict_rowcol(G, mask) -> Matrix
+    truth_surface(G, mask, correction) -> Matrix
+
+The error each model is asked to predict, on the same scale the correction removes:
+deviation from the control median for [`absolute`](@ref), and the fractional version
+of that for [`relative`](@ref). This is also the GP's training target at the controls.
+"""
+function truth_surface(G::AbstractMatrix, mask::BitMatrix, correction::Function)
+    A = Float64.(G)
+    m = median(A[mask])
+    return correction === absolute ? A .- m : (A .- m) ./ A
+end
+
+"""
+    error_target(G, mask, correction) -> Matrix
+
+The quantity every model predicts, defined at all wells but observable to a model
+fit on `mask` only at the control entries. There is deliberately no default
+`correction`: predicting on the wrong scale is the bug this signature exists to stop.
+"""
+error_target(G::AbstractMatrix, mask::BitMatrix, correction::Function) =
+    truth_surface(G, mask, correction)
+
+"""Predict no spatial error anywhere. The null model, and the skill-score denominator."""
+predict_constant(G, mask, correction) = zeros(Float64, size(G))
+
+"""
+    predict_rowcol(G, mask, correction) -> Matrix
 
 Additive row + column model fit to the control wells by minimum-norm least squares.
 
@@ -18,10 +41,11 @@ only `n` observations. The minimum-norm solution is the natural choice there, bu
 the model cannot be expected to shine until `n` approaches 20. Reported anyway,
 because additive row/column correction is the incumbent in the plate-QC literature.
 """
-function predict_rowcol(G::AbstractMatrix, mask::BitMatrix)
+function predict_rowcol(G::AbstractMatrix, mask::BitMatrix, correction::Function)
     nr, nc = size(G)
     idx = findall(mask)
-    y = [error_target(G, mask)[i] for i in idx]
+    t = error_target(G, mask, correction)
+    y = [t[i] for i in idx]
     X = zeros(Float64, length(idx), nr + nc)
     for (k, ci) in enumerate(idx)
         X[k, ci[1]] = 1.0
@@ -32,9 +56,9 @@ function predict_rowcol(G::AbstractMatrix, mask::BitMatrix)
 end
 
 """Predict each well's error as that of its nearest control well."""
-function predict_nearest(G::AbstractMatrix, mask::BitMatrix)
+function predict_nearest(G::AbstractMatrix, mask::BitMatrix, correction::Function)
     nr, nc = size(G)
-    t = error_target(G, mask)
+    t = error_target(G, mask, correction)
     idx = findall(mask)
     out = zeros(Float64, nr, nc)
     for i in 1:nr, j in 1:nc
@@ -49,9 +73,9 @@ function predict_nearest(G::AbstractMatrix, mask::BitMatrix)
 end
 
 """Inverse-distance-weighted interpolation of control-well error. Smooth, but not probabilistic."""
-function predict_idw(G::AbstractMatrix, mask::BitMatrix; power = 2.0)
+function predict_idw(G::AbstractMatrix, mask::BitMatrix, correction::Function; power = 2.0)
     nr, nc = size(G)
-    t = error_target(G, mask)
+    t = error_target(G, mask, correction)
     idx = findall(mask)
     out = zeros(Float64, nr, nc)
     for i in 1:nr, j in 1:nc
@@ -68,15 +92,6 @@ function predict_idw(G::AbstractMatrix, mask::BitMatrix; power = 2.0)
     end
     return out
 end
-
-"""
-    error_target(G, mask) -> Matrix
-
-The quantity every model predicts: each well's deviation from the median of the
-*control* wells. Defined at all wells, but only the control entries are observable
-to a model fit on `mask`.
-"""
-error_target(G::AbstractMatrix, mask::BitMatrix) = Float64.(G) .- median(Float64.(G[mask]))
 
 const baseline_methods = Dict(
     "constant" => predict_constant,
