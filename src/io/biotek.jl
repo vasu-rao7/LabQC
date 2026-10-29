@@ -2,10 +2,11 @@
 #
 # Two export shapes appear in this project's raw data:
 #   * endpoint   - an 8x12 grid, row letters down column c, values in the 12 columns to the right
-#   * kinetic    - a wide table, one row per read, wells A1..H12 spread across the columns
+#   * kinetic    - a wide table, one row per read, wells A1..H12 (96-well) or A1..P24
+#                  (384-well) spread across the columns
 #
 # Neither shape is at a fixed cell address, so both readers anchor on a token
-# ("A" for endpoint, "A1" for kinetic) and validate that exactly 96 wells were found.
+# ("A" for endpoint, "A1" for kinetic) and validate that a complete plate was found.
 #
 # Three hazards these readers exist to handle, all observed in raw_data/:
 #   1. The declared read count can be wrong. 092424_neg_control_plate1 announces
@@ -15,7 +16,9 @@
 #   3. A single file may carry several sheets, and different files may carry
 #      byte-identical grids. Hash every grid so duplicates cannot be counted twice.
 
-const WELL_RE = r"^([A-H])(1[0-2]|[1-9])$"
+const WELL_RE = r"^([A-P])(2[0-4]|1[0-9]|[1-9])$"
+# plate shapes a kinetic export may hold; anything else is an incomplete or unknown block
+const PLATE_SHAPES = ((8, 12), (16, 24))
 const SENTINELS = ("?????", "OVRFLW", "OVER", "")
 
 """Parse a spreadsheet cell into an OD value, mapping BioTek sentinels to `missing`."""
@@ -32,9 +35,12 @@ end
 Elapsed time of a read, in hours.
 
 XLSX.jl types BioTek's elapsed-time column as `Dates.Time`, which wraps at 24 h;
-`unwrap_hours!` repairs that. A plain number is an Excel day fraction.
+`unwrap_hours!` repairs that. A plain number is an Excel day fraction. Tables
+re-saved by other tools may hold the time as elapsed-time text instead:
+`"H:MM:SS"` with any number of hours, or `"N day(s), HH:MM:SS"`.
 """
 const EXCEL_EPOCH = Dates.DateTime(1899, 12, 30)
+const ELAPSED_RE = r"^(?:(\d+) days?, )?(\d+):(\d{1,2}):(\d{1,2}(?:\.\d+)?)$"
 
 function totime_h(x)
     x === missing && return missing
@@ -43,9 +49,17 @@ function totime_h(x)
     x isa Dates.DateTime && return Dates.value(x - EXCEL_EPOCH) / 3.6e6   # ms -> h
     x isa Dates.Date && return Dates.value(x - Dates.Date(EXCEL_EPOCH)) * 24.0
     x isa Real && return Float64(x) * 24.0                   # day fraction -> h
-    v = tryparse(Float64, strip(string(x)))
-    return v === nothing ? missing : v * 24.0
+    s = strip(string(x))
+    v = tryparse(Float64, s)
+    v === nothing || return v * 24.0
+    m = match(ELAPSED_RE, s)
+    m === nothing && return missing
+    days = m[1] === nothing ? 0 : parse(Int, m[1])
+    return 24.0 * days + parse(Int, m[2]) + parse(Int, m[3]) / 60 + parse(Float64, m[4]) / 3600
 end
+
+"""Time-like text that `totime_h` could not read; such a row must not be skipped silently."""
+unreadable_time(x) = x isa AbstractString && occursin(':', x) && ismissing(totime_h(x))
 
 """Restore monotonicity to elapsed times that wrapped at the 24 h boundary."""
 function unwrap_hours!(t::Vector{Float64})
@@ -101,6 +115,8 @@ function read_endpoint_grids(path::AbstractString)
             r + 7 <= nr && c + 12 <= nc || continue
             all(i -> D[r+i-1, c] isa AbstractString &&
                      strip(string(D[r+i-1, c])) == string("ABCDEFGH"[i]), 1:8) || continue
+            r + 8 <= nr && D[r+8, c] isa AbstractString && strip(string(D[r+8, c])) == "I" &&
+                error("$(basename(path)): endpoint grid continues past row H; only 96-well endpoint grids are supported")
             G = Matrix{Union{Float64,Missing}}(undef, 8, 12)
             for i in 1:8, j in 1:12
                 G[i, j] = tonum(D[r+i-1, c+j])
@@ -116,7 +132,8 @@ end
 """
     read_kinetic(path) -> NamedTuple
 
-A kinetic export as `values` (8x12xT), `times_h`, and metadata. Stops at the first
+A kinetic export as `values` (rows x columns x T, for a 96- or 384-well plate), `times_h`,
+and metadata. Stops at the first
 all-blank read row so header-declared read counts are never trusted, and derives the
 read interval from the timestamps rather than from the declared protocol.
 """
@@ -136,14 +153,26 @@ function read_kinetic(path::AbstractString)
             occursin(WELL_RE, s) && (wellcol[s] = c)
             s == "Time" && (timecol = c)
         end
-        length(wellcol) == 96 || error("$(basename(path)): found $(length(wellcol)) wells, expected 96")
+        # the plate shape comes from the wells present, and must be a complete plate:
+        # a partial header (e.g. one 96-well block of a 384-well export) is an error
+        rc = [(Int(m[1][1]) - Int('A') + 1, parse(Int, m[2])) for m in (match(WELL_RE, w) for w in keys(wellcol))]
+        isempty(rc) && error("$(basename(path)): no well columns in header row $hdr")
+        nrow, ncol = maximum(first, rc), maximum(last, rc)
+        (nrow, ncol) in PLATE_SHAPES && length(wellcol) == nrow * ncol ||
+            error("$(basename(path)): found $(length(wellcol)) wells spanning $(nrow)x$(ncol); " *
+                  "expected a complete 8x12 or 16x24 plate")
+        # a complete-looking 8x12 header can still be the first block of a 384-well
+        # export; when the sheet names its plate type, the two must agree
+        pt = match(r"\b(96|384)\b", string(get(sheet_meta(D), "Plate Type", "")))
+        pt === nothing || parse(Int, pt[1]) == nrow * ncol ||
+            error("$(basename(path)): header holds $(nrow * ncol) wells but the plate type is $(pt[1])-well")
         timecol === nothing && error("$(basename(path)): no Time column in header row $hdr")
 
         times = Float64[]
         frames = Matrix{Union{Float64,Missing}}[]
         stopped_at = nr + 1
         for r in (hdr+1):nr
-            row = Matrix{Union{Float64,Missing}}(undef, 8, 12)
+            row = Matrix{Union{Float64,Missing}}(undef, nrow, ncol)
             nfilled = 0
             for (w, c) in wellcol
                 m = match(WELL_RE, w)
@@ -157,6 +186,10 @@ function read_kinetic(path::AbstractString)
                 break
             end
             t = totime_h(D[r, timecol])
+            # rows with no readable time below the data are BioTek's derived "Results"
+            # table and are skipped; time-like text that fails to parse is a real read
+            unreadable_time(D[r, timecol]) &&
+                error("$(basename(path)): row $r has well data but an unreadable time $(repr(D[r, timecol]))")
             ismissing(t) && continue
             push!(times, Float64(t))
             push!(frames, row)
@@ -175,7 +208,7 @@ function read_kinetic(path::AbstractString)
         isempty(frames) && error("$(basename(path)): no data rows found")
         unwrap_hours!(times)
 
-        V = Array{Union{Float64,Missing}}(undef, 8, 12, length(frames))
+        V = Array{Union{Float64,Missing}}(undef, nrow, ncol, length(frames))
         for (k, f) in enumerate(frames); V[:, :, k] = f; end
         ivals = length(times) > 1 ? diff(times) .* 60 : Float64[]
 

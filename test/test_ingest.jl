@@ -96,3 +96,35 @@ end
     @test varexpl(G, 1) > 0.5      # removing column means kills most of the variance
     @test varexpl(G, 2) < 0.3
 end
+
+@testset "384-well kinetic export (poster plate E4)" begin
+    @test totime_h("00:10:12") ≈ 10 / 60 + 12 / 3600
+    @test totime_h("23:50:12") ≈ 23 + 50 / 60 + 12 / 3600
+    @test totime_h("0.5") ≈ 12.0                # numeric strings are still day fractions
+    @test totime_h("not a time") === missing
+    k = read_kinetic(joinpath(RAW, "poster_e4", "E4_211118_CDM_Glucose_V2_cleaned.xlsx"))
+    # the 96-well reader used to return the top-left 8x12 corner and 1-3 reads here
+    @test size(k.values) == (16, 24, 146)
+    @test k.nreads == 146
+    @test k.interval_min ≈ 10.0 atol = 0.01
+    @test k.times_h[end] ≈ 24.17 atol = 0.01   # reads past 24 h are unwrapped, not dropped
+    @test issorted(k.times_h)
+    @test k.n_missing == 0
+    # every value matches the file the 2021 poster notebook read (row-major A1..A24, B1..)
+    P = LabQC.CSV.File(joinpath(RAW, "poster_e4", "E4_poster_GP_example_data.csv");
+                       header = false) |> LabQC.CSV.Tables.matrix
+    @test size(P) == (146, 384)
+    @test all(P[t, (i-1)*24 + j] == k.values[i, j, t] for t in 1:146, i in 1:16, j in 1:24)
+end
+
+@testset "elapsed time written as text past 24 h" begin
+    @test totime_h("24:00:12") ≈ 24 + 12 / 3600
+    @test totime_h("25:10:12") ≈ 25 + 10 / 60 + 12 / 3600
+    @test totime_h("1 day, 00:10:12") ≈ 24 + 10 / 60 + 12 / 3600
+    @test totime_h("2 days, 01:00:00") ≈ 49.0
+    # an ambiguous date-time string is not guessed at, and is flagged rather than skipped
+    @test totime_h("1899-12-31 00:10:12") === missing
+    @test LabQC.unreadable_time("1899-12-31 00:10:12")
+    @test !LabQC.unreadable_time("D")              # BioTek's Results-table rows stay skippable
+    @test !LabQC.unreadable_time(missing)
+end
