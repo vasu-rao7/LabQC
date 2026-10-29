@@ -1,0 +1,1 @@
+started: 2026-10-09T01:22:42.799  commit: 6755b1224e3659c05863c61f1c427a4eff69abf3  uncommitted changes and untracked files: RUN_DIFF_20261009T012242.patch (tracked diff only; the sweep code was all tracked at that point)

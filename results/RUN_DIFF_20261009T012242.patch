@@ -1,0 +1,464 @@
+diff --git a/Manifest.toml b/Manifest.toml
+index 2536c4b..9bf7a04 100644
+--- a/Manifest.toml
++++ b/Manifest.toml
+@@ -732,7 +732,7 @@ uuid = "b964fa9f-0449-5b57-a5c2-d3ea65f4040f"
+ version = "1.4.0"
+ 
+ [[deps.LabQC]]
+-deps = ["CSV", "CategoricalArrays", "DataFrames", "Dates", "GaussianProcesses", "LinearAlgebra", "PlateArrays", "Plots", "Random", "SHA", "Statistics", "StatsBase", "XLSX"]
++deps = ["CSV", "CategoricalArrays", "DataFrames", "Dates", "GaussianProcesses", "LinearAlgebra", "PlateArrays", "Plots", "Random", "SHA", "Serialization", "Statistics", "StatsBase", "XLSX"]
+ path = "."
+ uuid = "bf7802ce-d241-4265-a8b6-de29616c74d0"
+ version = "0.1.0"
+diff --git a/experiments/run_sweep.jl b/experiments/run_sweep.jl
+index 66b0183..c63a007 100644
+--- a/experiments/run_sweep.jl
++++ b/experiments/run_sweep.jl
+@@ -20,13 +20,24 @@ const THIN = 4
+ mkpath(OUT)
+ @info "sweep starting" time = now() ns = NS nlayouts = NLAYOUTS thin = THIN
+ 
++# record exactly which code produced these results: the commit, plus any uncommitted diff
++let repo = joinpath(@__DIR__, "..")
++    sha = readchomp(`git -C $repo rev-parse HEAD`)
++    diff = read(`git -C $repo diff HEAD -- src experiments test Project.toml Manifest.toml`, String)
++    write(joinpath(OUT, "RUN_INFO.txt"),
++          "started: $(now())\ncommit: $sha\nuncommitted changes: $(isempty(diff) ? "none" : "yes, see RUN_DIFF.patch")\n")
++    isempty(diff) || write(joinpath(OUT, "RUN_DIFF.patch"), diff)
++end
++
+ # ---------------------------------------------------------------- surfaces
+ surfaces = build_surfaces(RAW; thin = THIN)
+ @info "surfaces built" total = length(surfaces)
+ 
+ srows = NamedTuple[]
+ for (exp, s) in surfaces
+-    vd = variance_decomposition(s.values)
++    # decompose the error on the scale it is scored on: identical to raw OD for
++    # `absolute` (a shift), but fractional deviation for `relative`
++    vd = variance_decomposition(truth_surface(s.values, trues(size(s.values)), s.correction))
+     push!(srows, (experiment = exp, surface = s.id, plate = s.meta["plate"],
+                   metric = s.meta["metric"], read = s.meta["read"], time_h = s.meta["time_h"],
+                   correction = string(s.correction), class = string(s.class),
+diff --git a/src/LabQC.jl b/src/LabQC.jl
+index b31dcd9..d778c7a 100644
+--- a/src/LabQC.jl
++++ b/src/LabQC.jl
+@@ -24,7 +24,7 @@ export control_summary
+ export read_endpoint_grids, read_kinetic, transient_reads, grid_hash
+ export well_pitch
+ export skill, rmse, mae, bias, spearman, coverage, variance_decomposition
+-export error_target, baseline_methods
++export error_target, baseline_methods, lengthscales, signal_sd
+ export generate_layouts, fixed_hybrid_bounds, layout_geometry, layout_scores
+ export Surface, truth_surface, sweep_cell
+ export build_surfaces, default_objectives, layout_bank, run_experiment, EXPERIMENTS
+diff --git a/src/correction/plateerrorGP.jl b/src/correction/plateerrorGP.jl
+index 23858ea..d4fb5c7 100644
+--- a/src/correction/plateerrorGP.jl
++++ b/src/correction/plateerrorGP.jl
+@@ -15,8 +15,11 @@ remove, position-dependent error at every well.
+ - `verbose`: also return a Dict of diagnostics, with keys `"gp"`, `"mean_error"`,
+   `"var_f"` (latent posterior variance), `"var_y"` (predictive variance, including
+   observation noise) and `"sd_error"` (`sqrt` of `var_f`).
+-- `ls`, `lb_ls`, `ub_ls`: lengthscale of the isotropic Matern 5/2 kernel and its
+-  optimisation bounds, in the same units as `pitch`.
++- `ls`, `lb_ls`, `ub_ls`: lengthscale of the Matern 5/2 kernel and its
++  optimisation bounds, in the same units as `pitch`. With `kernel = :ard`, `ls` may
++  be a `(column, row)` pair; the bounds apply to both axes.
++- `kernel`: `:iso` (default) shares one lengthscale between rows and columns;
++  `:ard` fits one per axis, as the original PlateErrorGP package did.
+ - `pitch`: distance between neighbouring wells. Defaults to `1.0`, i.e. well
+   indices. Pass `well_pitch(size(data)...)` to fit in mm instead — and change the
+   lengthscale bounds to match, since they are expressed in the same units.
+@@ -27,7 +30,8 @@ Only control wells train the model, but every well is corrected.
+ """
+ function plateerrorGP(data::Matrix{T}, controls::BitMatrix, correction::Function;
+                       verbose = false, ls = 3.0, lb_ls = 2.0, ub_ls = 6.0,
+-                      pitch = 1.0, optimize = true, kwargs...) where T <: Real
++                      pitch = 1.0, optimize = true, kernel::Symbol = :iso,
++                      kwargs...) where T <: Real
+ 
+     ncontrols = sum(controls)
+     ncontrols == 0 && error("plateerrorGP: `controls` selects no wells; " *
+@@ -35,7 +39,7 @@ function plateerrorGP(data::Matrix{T}, controls::BitMatrix, correction::Function
+     ncontrols < 3 && error("plateerrorGP: only $ncontrols control well(s); at least 3 are " *
+                            "needed to fit a lengthscale, signal and noise")
+     ncontrols < 6 && @warn "plateerrorGP: fitting $ncontrols control wells; " *
+-                           "hyperparameters are weakly identified below ~6 controls"
++                           "hyperparameters are weakly identified below ~6 controls" maxlog = 1
+ 
+     df = build_df(data, controls)
+     avg_control = median(filter(row -> row.Control == 1, df).Value) #calculate median value of set of controls
+@@ -48,7 +52,7 @@ function plateerrorGP(data::Matrix{T}, controls::BitMatrix, correction::Function
+ 
+     # Fit and optimize GP model
+     gp = makeGP(train_in, train_out; lengthscale = ls, lb_lengthscale = lb_ls,
+-                ub_lengthscale = ub_ls, optimize = optimize, kwargs...)
++                ub_lengthscale = ub_ls, optimize = optimize, kernel = kernel, kwargs...)
+ 
+     # Predict at every well in one call. Looping per well repeats the same
+     # triangular solve once per well, which dominates runtime in large sweeps.
+@@ -93,7 +97,8 @@ end
+ """
+     makeGP(train_in, train_out; kwargs...)
+ 
+-Zero-mean GP with an isotropic Matern 5/2 kernel over well positions.
++Zero-mean GP with a Matern 5/2 kernel over well positions: isotropic by default,
++or with one lengthscale per axis for `kernel = :ard`.
+ 
+ `optimize = false` skips hyperparameter fitting and uses `lengthscale`, `sd_guess`
+ and `noise` as supplied. No catch-all keyword argument is accepted: a misspelled
+@@ -104,21 +109,34 @@ when kernel bounds are given.
+ function makeGP(train_in, train_out; lengthscale = 3.0, sd_guess = signal_guess(train_out),
+                 lb_lengthscale = 2.0, ub_lengthscale = 6.0,
+                 lb_std = sd_guess / 5, ub_std = sd_guess * 3,
+-                noise = -2.0, optimize = true)
++                noise = -2.0, optimize = true, kernel::Symbol = :iso)
+     mZero = MeanZero()
+ 
+-    kern = Matern(5/2, log(lengthscale), log(sd_guess))
++    if kernel === :iso
++        kern = Matern(5/2, log(lengthscale), log(sd_guess))
++        lo = [log(lb_lengthscale), log(lb_std)]
++        hi = [log(ub_lengthscale), log(ub_std)]
++    elseif kernel === :ard
++        # one lengthscale per input row of `train_in`, i.e. (column, row)
++        ell = lengthscale isa Real ? fill(Float64(lengthscale), 2) : collect(Float64, lengthscale)
++        length(ell) == 2 || error("makeGP: an :ard kernel needs a (column, row) lengthscale pair")
++        kern = Matern(5/2, log.(ell), log(sd_guess))
++        lo = [log(lb_lengthscale), log(lb_lengthscale), log(lb_std)]
++        hi = [log(ub_lengthscale), log(ub_lengthscale), log(ub_std)]
++    else
++        throw(ArgumentError("kernel must be :iso or :ard, got :$kernel"))
++    end
+ 
+     # Fit a GP model to training data
+     gp = GP(train_in, train_out, mZero, kern, noise)
+ 
+     optimize || return gp
+ 
+-    # Define kernel bounds for GP hyperparam optimization
+-    kb = [
+-            [log(lb_lengthscale), log(lb_std)],   # lower bounds
+-            [log(ub_lengthscale), log(ub_std)]    # upper bound
+-        ]
++    # Kernel bounds for hyperparameter optimisation. GaussianProcesses does not check
++    # their length against the kernel, so a mismatch would silently misalign them.
++    length(lo) == GaussianProcesses.num_params(kern) ||
++        error("makeGP: $(length(lo)) kernel bounds for $(GaussianProcesses.num_params(kern)) parameters")
++    kb = [lo, hi]
+ 
+     # Optimize GP
+     GaussianProcesses.optimize!(gp; domean = false, kernbounds = kb)
+@@ -126,6 +144,18 @@ function makeGP(train_in, train_out; lengthscale = 3.0, sd_guess = signal_guess(
+     return gp
+ end
+ 
++"""
++    lengthscales(gp) -> Vector{Float64}
++
++Fitted lengthscale(s) of a GP from [`makeGP`](@ref): one value for the isotropic
++kernel, `(column, row)` for `:ard`. Read from the parameter vector because the two
++kernel types store them under different field names.
++"""
++lengthscales(gp) = exp.(GaussianProcesses.get_params(gp.kernel)[1:end-1])
++
++"""Fitted signal standard deviation of a GP from [`makeGP`](@ref)."""
++signal_sd(gp) = exp(GaussianProcesses.get_params(gp.kernel)[end])
++
+ """
+     signal_guess(train_out) -> Float64
+ 
+diff --git a/src/experiments/baselines.jl b/src/experiments/baselines.jl
+index ee4ad6d..91a901e 100644
+--- a/src/experiments/baselines.jl
++++ b/src/experiments/baselines.jl
+@@ -1,14 +1,37 @@
+ # Alternative error-surface predictors, for comparison against the GP.
+ #
+-# Each takes the measured plate, a control mask, and the control-centred truth, and
+-# returns a predicted error at every well. All are fit ONLY on the control wells, so
+-# they face exactly the problem the GP faces.
++# Each takes the measured plate, a control mask, and the correction whose scale the
++# errors live on, and returns a predicted error at every well. All are fit ONLY on
++# the control wells, so they face exactly the problem the GP faces, on the same scale.
++
++"""
++    truth_surface(G, mask, correction) -> Matrix
++
++The error each model is asked to predict, on the same scale the correction removes:
++deviation from the control median for [`absolute`](@ref), and the fractional version
++of that for [`relative`](@ref). This is also the GP's training target at the controls.
++"""
++function truth_surface(G::AbstractMatrix, mask::BitMatrix, correction::Function)
++    A = Float64.(G)
++    m = median(A[mask])
++    return correction === absolute ? A .- m : (A .- m) ./ A
++end
++
++"""
++    error_target(G, mask, correction) -> Matrix
++
++The quantity every model predicts, defined at all wells but observable to a model
++fit on `mask` only at the control entries. There is deliberately no default
++`correction`: predicting on the wrong scale is the bug this signature exists to stop.
++"""
++error_target(G::AbstractMatrix, mask::BitMatrix, correction::Function) =
++    truth_surface(G, mask, correction)
+ 
+ """Predict no spatial error anywhere. The null model, and the skill-score denominator."""
+-predict_constant(G, mask) = zeros(Float64, size(G))
++predict_constant(G, mask, correction) = zeros(Float64, size(G))
+ 
+ """
+-    predict_rowcol(G, mask) -> Matrix
++    predict_rowcol(G, mask, correction) -> Matrix
+ 
+ Additive row + column model fit to the control wells by minimum-norm least squares.
+ 
+@@ -18,10 +41,11 @@ only `n` observations. The minimum-norm solution is the natural choice there, bu
+ the model cannot be expected to shine until `n` approaches 20. Reported anyway,
+ because additive row/column correction is the incumbent in the plate-QC literature.
+ """
+-function predict_rowcol(G::AbstractMatrix, mask::BitMatrix)
++function predict_rowcol(G::AbstractMatrix, mask::BitMatrix, correction::Function)
+     nr, nc = size(G)
+     idx = findall(mask)
+-    y = [error_target(G, mask)[i] for i in idx]
++    t = error_target(G, mask, correction)
++    y = [t[i] for i in idx]
+     X = zeros(Float64, length(idx), nr + nc)
+     for (k, ci) in enumerate(idx)
+         X[k, ci[1]] = 1.0
+@@ -32,9 +56,9 @@ function predict_rowcol(G::AbstractMatrix, mask::BitMatrix)
+ end
+ 
+ """Predict each well's error as that of its nearest control well."""
+-function predict_nearest(G::AbstractMatrix, mask::BitMatrix)
++function predict_nearest(G::AbstractMatrix, mask::BitMatrix, correction::Function)
+     nr, nc = size(G)
+-    t = error_target(G, mask)
++    t = error_target(G, mask, correction)
+     idx = findall(mask)
+     out = zeros(Float64, nr, nc)
+     for i in 1:nr, j in 1:nc
+@@ -49,9 +73,9 @@ function predict_nearest(G::AbstractMatrix, mask::BitMatrix)
+ end
+ 
+ """Inverse-distance-weighted interpolation of control-well error. Smooth, but not probabilistic."""
+-function predict_idw(G::AbstractMatrix, mask::BitMatrix; power = 2.0)
++function predict_idw(G::AbstractMatrix, mask::BitMatrix, correction::Function; power = 2.0)
+     nr, nc = size(G)
+-    t = error_target(G, mask)
++    t = error_target(G, mask, correction)
+     idx = findall(mask)
+     out = zeros(Float64, nr, nc)
+     for i in 1:nr, j in 1:nc
+@@ -69,15 +93,6 @@ function predict_idw(G::AbstractMatrix, mask::BitMatrix; power = 2.0)
+     return out
+ end
+ 
+-"""
+-    error_target(G, mask) -> Matrix
+-
+-The quantity every model predicts: each well's deviation from the median of the
+-*control* wells. Defined at all wells, but only the control entries are observable
+-to a model fit on `mask`.
+-"""
+-error_target(G::AbstractMatrix, mask::BitMatrix) = Float64.(G) .- median(Float64.(G[mask]))
+-
+ const baseline_methods = Dict(
+     "constant" => predict_constant,
+     "rowcol"   => predict_rowcol,
+diff --git a/src/experiments/runner.jl b/src/experiments/runner.jl
+index 2ded1cb..0e088a2 100644
+--- a/src/experiments/runner.jl
++++ b/src/experiments/runner.jl
+@@ -42,7 +42,7 @@ function build_surfaces(rawdir::AbstractString; thin::Int = 4,
+               Dict{String,Any}("plate" => "pos_plate", "metric" => "od",
+                                "read" => t, "time_h" => p.times_h[t]))))
+     end
+-    maxod = [maximum(skipmissing(p.values[i, j, :])) for i in 1:8, j in 1:12]
++    maxod = [maximum(skipmissing(p.values[i, j, :])) for i in axes(p.values, 1), j in axes(p.values, 2)]
+     push!(base, ("positive", Surface("pos_maxOD", maxod, relative, :positives,
+           Dict{String,Any}("plate" => "pos_plate", "metric" => "maxOD",
+                            "read" => 0, "time_h" => NaN))))
+@@ -88,7 +88,14 @@ function layout_bank(wells::BitMatrix, ns, objspecs; nlayouts = 30, seed = 20260
+                      cache::Union{Nothing,String} = nothing)
+     if cache !== nothing && isfile(cache)
+         @info "layout bank loaded from cache" file = basename(cache)
+-        return deserialize(cache)
++        lb = deserialize(cache)
++        # the cache is trusted on file existence alone, so check it was built for this run
++        want = Set((n, obj, lam) for n in ns if 2n < sum(wells) for (obj, lam) in objspecs)
++        Set(keys(lb.bank)) == want ||
++            error("layout cache $(basename(cache)) was built for different control counts or objectives")
++        all(v -> length(v) == nlayouts, values(lb.bank)) ||
++            error("layout cache $(basename(cache)) does not hold $nlayouts layouts per condition")
++        return lb
+     end
+     bounds = Dict{Int,Any}()
+     bank = Dict{Tuple{Int,String,Float64},Vector{PlateArray}}()
+@@ -118,6 +125,13 @@ end
+ function append_rows(path::AbstractString, rows::Vector{<:NamedTuple})
+     isempty(rows) && return
+     mkpath(dirname(path))
++    if isfile(path)
++        # appending under a different header would silently misalign every column
++        have = String.(propertynames(CSV.File(path; limit = 1)))
++        want = String.(collect(keys(first(rows))))
++        have == want || error("$(basename(path)) has columns $have, new rows have $want; " *
++                              "archive the old file before rerunning with a changed schema")
++    end
+     CSV.write(path, rows; append = isfile(path), writeheader = !isfile(path))
+ end
+ 
+diff --git a/src/experiments/sweep.jl b/src/experiments/sweep.jl
+index ad70a99..74b19ae 100644
+--- a/src/experiments/sweep.jl
++++ b/src/experiments/sweep.jl
+@@ -6,19 +6,6 @@
+ # every fit. Results stream to CSV so a long run survives interruption, and a rerun
+ # skips rows that already exist.
+ 
+-"""
+-    truth_surface(G, mask, correction) -> Matrix
+-
+-The error each model is asked to predict, on the same scale the correction removes:
+-deviation from the control median for [`absolute`](@ref), and the fractional version
+-of that for [`relative`](@ref).
+-"""
+-function truth_surface(G::AbstractMatrix, mask::BitMatrix, correction::Function)
+-    A = Float64.(G)
+-    m = median(A[mask])
+-    return correction === absolute ? A .- m : (A .- m) ./ A
+-end
+-
+ """
+     Surface(id, values, correction, class; meta...)
+ 
+@@ -34,12 +21,6 @@ struct Surface
+     meta::Dict{String,Any}
+ end
+ 
+-const SWEEP_COLUMNS = [:surface, :plate, :metric, :n, :objective, :lambda, :layout,
+-                       :model, :skill, :rmse, :mae, :bias, :spearman, :cover68, :cover95,
+-                       :mean_sd, :max_sd, :ls_fit, :sd_fit, :noise_fit,
+-                       :max_min_dist, :mean_min_dist, :cols_covered, :rows_covered,
+-                       :minisum, :lhs_score, :hybrid_score, :n_heldout, :seconds]
+-
+ """
+     sweep_cell(surface, mask, geom, scores; pitch, ls, lb_ls, ub_ls) -> Vector{NamedTuple}
+ 
+@@ -50,10 +31,16 @@ differences the sweep exists to measure.
+ """
+ function sweep_cell(s::Surface, mask::BitMatrix, geom, scores;
+                     pitch = well_pitch(size(s.values)...),
+-                    ls = 3 * pitch, lb_ls = 2 * pitch, ub_ls = 6 * pitch)
++                    ls = 3 * pitch, lb_ls = 2 * pitch, ub_ls = 6 * pitch,
++                    screen_frac = 0.25)
+     truth = truth_surface(s.values, mask, s.correction)
+     held = .!mask
+     t = truth[held]
++    # wells that barely grew make relative error explode (0.04 vs 0.55 is about -12),
++    # so every score is also reported on held-out wells at or above a fraction of the
++    # surface median; on surfaces without such wells this is the full held-out set
++    screened = held .& (s.values .>= screen_frac * median(s.values))
++    ts = truth[screened]
+     rows = NamedTuple[]
+ 
+     el = @elapsed begin
+@@ -64,20 +51,35 @@ function sweep_cell(s::Surface, mask::BitMatrix, geom, scores;
+     gp = diag["gp"]
+     preds = Dict{String,Matrix{Float64}}("gp" => diag["mean_error"])
+     for (name, f) in baseline_methods
+-        preds[name] = f(s.values, mask)
++        preds[name] = f(s.values, mask, s.correction)
+     end
+ 
++    # Held-out truth is an observed deviation, so it carries the per-well noise the GP
++    # fitted. The interval that should contain it is the predictive one (var_y); the
++    # latent one (var_f) covers only the smooth surface and is kept for comparison.
++    sd_y = sqrt.(diag["var_y"])
++    sd_f = diag["sd_error"]
++    ell = lengthscales(gp)
++    nan = fill(NaN, count(held))
+     for (model, P) in preds
+-        p = P[held]
+-        sd = model == "gp" ? diag["sd_error"][held] : fill(NaN, length(p))
++        isgp = model == "gp"
++        p, ps = P[held], P[screened]
++        sy, sf = isgp ? sd_y[held] : nan, isgp ? sd_f[held] : nan
+         push!(rows, (model = model,
+                      skill = skill(p, t), rmse = rmse(p, t), mae = mae(p, t),
+                      bias = bias(p, t), spearman = spearman(p, t),
+-                     cover68 = model == "gp" ? coverage(p, t, sd; z = 1.0) : NaN,
+-                     cover95 = model == "gp" ? coverage(p, t, sd; z = 1.96) : NaN,
+-                     mean_sd = model == "gp" ? mean(sd) : NaN,
+-                     max_sd = model == "gp" ? maximum(sd) : NaN,
+-                     ls_fit = gp.kernel.ℓ, sd_fit = sqrt(gp.kernel.σ2),
++                     cover68 = isgp ? coverage(p, t, sy; z = 1.0) : NaN,
++                     cover95 = isgp ? coverage(p, t, sy; z = 1.96) : NaN,
++                     mean_sd = isgp ? mean(sy) : NaN,
++                     max_sd = isgp ? maximum(sy) : NaN,
++                     cover68_f = isgp ? coverage(p, t, sf; z = 1.0) : NaN,
++                     cover95_f = isgp ? coverage(p, t, sf; z = 1.96) : NaN,
++                     mean_sd_f = isgp ? mean(sf) : NaN,
++                     max_sd_f = isgp ? maximum(sf) : NaN,
++                     skill_screened = skill(ps, ts),
++                     cover95_screened = isgp ? coverage(ps, ts, sd_y[screened]; z = 1.96) : NaN,
++                     n_screened = count(screened),
++                     ls_fit = ell[1], sd_fit = signal_sd(gp),
+                      noise_fit = exp(gp.logNoise.value),
+                      max_min_dist = geom.max_min_dist, mean_min_dist = geom.mean_min_dist,
+                      cols_covered = geom.cols_covered, rows_covered = geom.rows_covered,
+diff --git a/test/runtests.jl b/test/runtests.jl
+index 1cd79c7..1259d26 100644
+--- a/test/runtests.jl
++++ b/test/runtests.jl
+@@ -3,4 +3,5 @@ using Test
+ @testset "LabQC" begin
+     include("test_ingest.jl")
+     include("test_gp.jl")
++    include("test_experiments.jl")
+ end
+diff --git a/test/test_gp.jl b/test/test_gp.jl
+index 2e53f65..5418158 100644
+--- a/test/test_gp.jl
++++ b/test/test_gp.jl
+@@ -86,3 +86,33 @@ end
+     corrected = gp_correction(DATA, plate; passes = :technical)
+     @test std(corrected) < 0.5 * std(DATA)
+ end
++
++@testset "default kernel is unchanged by the kernel option" begin
++    # golden values captured at commit 6755b12, before `kernel` existed
++    golden = Dict{Tuple{String,String,Int,Int},Float64}()
++    for line in eachline(joinpath(@__DIR__, "golden", "plateerrorGP_iso.txt"))
++        startswith(line, "#") && continue
++        case, key, i, j, v = split(line, '\t')
++        golden[(case, key, parse(Int, i), parse(Int, j))] = parse(Float64, v)
++    end
++    neg, pos = split_masks()
++    for (case, mask, corr) in (("neg_absolute", neg, absolute), ("pos_relative", pos, relative))
++        corrected, d = plateerrorGP(DATA, mask, corr; verbose = true)
++        for (key, M) in (("corrected", corrected), ("mean_error", d["mean_error"]),
++                         ("var_f", d["var_f"]), ("var_y", d["var_y"]))
++            @test all(M[i, j] === golden[(case, key, i, j)] for i in 1:R, j in 1:C)
++        end
++    end
++end
++
++@testset "per-axis (ARD) kernel" begin
++    neg, _ = split_masks()
++    _, d = plateerrorGP(DATA, neg, absolute; verbose = true, kernel = :ard, ls = (4.0, 3.0))
++    gp = d["gp"]
++    @test length(LabQC.lengthscales(gp)) == 2
++    @test all(2.0 - 1e-6 .<= LabQC.lengthscales(gp) .<= 6.0 + 1e-6)
++    _, d_iso = plateerrorGP(DATA, neg, absolute; verbose = true)
++    @test length(LabQC.lengthscales(d_iso["gp"])) == 1
++    @test LabQC.signal_sd(d_iso["gp"]) ≈ sqrt(d_iso["gp"].kernel.σ2)
++    @test_throws ArgumentError plateerrorGP(DATA, neg, absolute; kernel = :nonsense)
++end

@@ -1,0 +1,178 @@
+┌ Info: sweep starting
+│   time = 2026-10-09T01:22:41.672
+│   ns = 11-element Vector{Int64}: …
+│   nlayouts = 30
+└   thin = 4
+┌ Info: surfaces built
+└   total = 100
+┌ Info: wrote surfaces.csv
+└   n = 100
+┌ Info: building layout bank
+│   n_specs = 8
+└   n_counts = 11
+┌ Info: layout bank loaded from cache
+└   file = "layout_bank.jls"
+┌ Info: layout bank built
+└   seconds = 3.9
+┌ Info: wrote layouts.csv
+└   n = 5280
+┌ Info: running experiment
+│   experiment = "negative"
+│   surfaces = 38
+└   out = "sweep_negative.csv"
+┌ Warning: plateerrorGP: fitting 3 control wells; hyperparameters are weakly identified below ~6 controls
+└ @ LabQC ~/LabQC/src/correction/plateerrorGP.jl:41
+[ Info: [negative] surface 1/38 (neg1_t006_abs) cells=2640 elapsed=12.6s
+[ Info: [negative] surface 2/38 (neg1_t006_rel) cells=5280 elapsed=20.7s
+[ Info: [negative] surface 3/38 (neg1_t010_abs) cells=7920 elapsed=30.4s
+[ Info: [negative] surface 4/38 (neg1_t010_rel) cells=10560 elapsed=43.1s
+[ Info: [negative] surface 5/38 (neg1_t014_abs) cells=13200 elapsed=51.5s
+[ Info: [negative] surface 6/38 (neg1_t014_rel) cells=15840 elapsed=62.5s
+[ Info: [negative] surface 7/38 (neg1_t018_abs) cells=18480 elapsed=73.6s
+[ Info: [negative] surface 8/38 (neg1_t018_rel) cells=21120 elapsed=84.7s
+[ Info: [negative] surface 9/38 (neg1_t022_abs) cells=23760 elapsed=93.1s
+[ Info: [negative] surface 10/38 (neg1_t022_rel) cells=26400 elapsed=105.7s
+[ Info: [negative] surface 11/38 (neg1_t026_abs) cells=29040 elapsed=116.3s
+[ Info: [negative] surface 12/38 (neg1_t026_rel) cells=31680 elapsed=127.2s
+[ Info: [negative] surface 13/38 (neg1_t030_abs) cells=34320 elapsed=137.2s
+[ Info: [negative] surface 14/38 (neg1_t030_rel) cells=36960 elapsed=148.5s
+[ Info: [negative] surface 15/38 (neg1_t034_abs) cells=39600 elapsed=159.8s
+[ Info: [negative] surface 16/38 (neg1_t034_rel) cells=42240 elapsed=173.6s
+[ Info: [negative] surface 17/38 (neg1_t038_abs) cells=44880 elapsed=183.7s
+[ Info: [negative] surface 18/38 (neg1_t038_rel) cells=47520 elapsed=197.6s
+[ Info: [negative] surface 19/38 (neg1_t042_abs) cells=50160 elapsed=207.6s
+[ Info: [negative] surface 20/38 (neg1_t042_rel) cells=52800 elapsed=218.3s
+[ Info: [negative] surface 21/38 (neg1_t046_abs) cells=55440 elapsed=230.9s
+[ Info: [negative] surface 22/38 (neg1_t046_rel) cells=58080 elapsed=242.3s
+[ Info: [negative] surface 23/38 (neg1_t050_abs) cells=60720 elapsed=251.9s
+[ Info: [negative] surface 24/38 (neg1_t050_rel) cells=63360 elapsed=262.0s
+[ Info: [negative] surface 25/38 (neg1_t054_abs) cells=66000 elapsed=271.9s
+[ Info: [negative] surface 26/38 (neg1_t054_rel) cells=68640 elapsed=284.6s
+[ Info: [negative] surface 27/38 (neg1_t058_abs) cells=71280 elapsed=295.5s
+[ Info: [negative] surface 28/38 (neg1_t058_rel) cells=73920 elapsed=308.2s
+[ Info: [negative] surface 29/38 (neg1_t062_abs) cells=76560 elapsed=320.2s
+[ Info: [negative] surface 30/38 (neg1_t062_rel) cells=79200 elapsed=336.8s
+[ Info: [negative] surface 31/38 (neg1_t066_abs) cells=81840 elapsed=347.3s
+[ Info: [negative] surface 32/38 (neg1_t066_rel) cells=84480 elapsed=359.0s
+[ Info: [negative] surface 33/38 (neg1_t070_abs) cells=87120 elapsed=368.5s
+[ Info: [negative] surface 34/38 (neg1_t070_rel) cells=89760 elapsed=386.4s
+[ Info: [negative] surface 35/38 (neg1_t074_abs) cells=92400 elapsed=396.6s
+[ Info: [negative] surface 36/38 (neg1_t074_rel) cells=95040 elapsed=407.6s
+[ Info: [negative] surface 37/38 (neg1_t078_abs) cells=97680 elapsed=416.5s
+[ Info: [negative] surface 38/38 (neg1_t078_rel) cells=100320 elapsed=432.9s
+┌ Info: experiment done
+│   experiment = "negative"
+│   cells = 100320
+└   seconds = 436.4
+┌ Info: running experiment
+│   experiment = "positive"
+│   surfaces = 52
+└   out = "sweep_positive.csv"
+[ Info: [positive] surface 1/52 (pos_t005_abs) cells=2640 elapsed=10.7s
+[ Info: [positive] surface 2/52 (pos_t005_rel) cells=5280 elapsed=23.9s
+[ Info: [positive] surface 3/52 (pos_t009_abs) cells=7920 elapsed=34.8s
+[ Info: [positive] surface 4/52 (pos_t009_rel) cells=10560 elapsed=48.1s
+[ Info: [positive] surface 5/52 (pos_t013_abs) cells=13200 elapsed=58.2s
+[ Info: [positive] surface 6/52 (pos_t013_rel) cells=15840 elapsed=66.0s
+[ Info: [positive] surface 7/52 (pos_t017_abs) cells=18480 elapsed=74.4s
+[ Info: [positive] surface 8/52 (pos_t017_rel) cells=21120 elapsed=80.6s
+[ Info: [positive] surface 9/52 (pos_t021_abs) cells=23760 elapsed=86.7s
+[ Info: [positive] surface 10/52 (pos_t021_rel) cells=26400 elapsed=92.0s
+[ Info: [positive] surface 11/52 (pos_t025_abs) cells=29040 elapsed=97.2s
+[ Info: [positive] surface 12/52 (pos_t025_rel) cells=31680 elapsed=102.7s
+[ Info: [positive] surface 13/52 (pos_t029_abs) cells=34320 elapsed=111.3s
+[ Info: [positive] surface 14/52 (pos_t029_rel) cells=36960 elapsed=120.2s
+[ Info: [positive] surface 15/52 (pos_t033_abs) cells=39600 elapsed=129.9s
+[ Info: [positive] surface 16/52 (pos_t033_rel) cells=42240 elapsed=139.7s
+[ Info: [positive] surface 17/52 (pos_t037_abs) cells=44880 elapsed=150.0s
+[ Info: [positive] surface 18/52 (pos_t037_rel) cells=47520 elapsed=160.0s
+[ Info: [positive] surface 19/52 (pos_t041_abs) cells=50160 elapsed=171.4s
+[ Info: [positive] surface 20/52 (pos_t041_rel) cells=52800 elapsed=183.2s
+[ Info: [positive] surface 21/52 (pos_t045_abs) cells=55440 elapsed=194.5s
+[ Info: [positive] surface 22/52 (pos_t045_rel) cells=58080 elapsed=205.5s
+[ Info: [positive] surface 23/52 (pos_t049_abs) cells=60720 elapsed=223.0s
+[ Info: [positive] surface 24/52 (pos_t049_rel) cells=63360 elapsed=236.3s
+[ Info: [positive] surface 25/52 (pos_t053_abs) cells=66000 elapsed=248.0s
+[ Info: [positive] surface 26/52 (pos_t053_rel) cells=68640 elapsed=258.9s
+[ Info: [positive] surface 27/52 (pos_t057_abs) cells=71280 elapsed=273.0s
+[ Info: [positive] surface 28/52 (pos_t057_rel) cells=73920 elapsed=285.6s
+[ Info: [positive] surface 29/52 (pos_t061_abs) cells=76560 elapsed=297.0s
+[ Info: [positive] surface 30/52 (pos_t061_rel) cells=79200 elapsed=308.4s
+[ Info: [positive] surface 31/52 (pos_t065_abs) cells=81840 elapsed=321.5s
+[ Info: [positive] surface 32/52 (pos_t065_rel) cells=84480 elapsed=333.1s
+[ Info: [positive] surface 33/52 (pos_t069_abs) cells=87120 elapsed=343.6s
+[ Info: [positive] surface 34/52 (pos_t069_rel) cells=89760 elapsed=357.1s
+[ Info: [positive] surface 35/52 (pos_t073_abs) cells=92400 elapsed=368.3s
+[ Info: [positive] surface 36/52 (pos_t073_rel) cells=95040 elapsed=379.5s
+[ Info: [positive] surface 37/52 (pos_t077_abs) cells=97680 elapsed=390.2s
+[ Info: [positive] surface 38/52 (pos_t077_rel) cells=100320 elapsed=406.4s
+[ Info: [positive] surface 39/52 (pos_t081_abs) cells=102960 elapsed=425.9s
+[ Info: [positive] surface 40/52 (pos_t081_rel) cells=105600 elapsed=437.1s
+[ Info: [positive] surface 41/52 (pos_t085_abs) cells=108240 elapsed=449.1s
+[ Info: [positive] surface 42/52 (pos_t085_rel) cells=110880 elapsed=459.9s
+[ Info: [positive] surface 43/52 (pos_t089_abs) cells=113520 elapsed=470.4s
+[ Info: [positive] surface 44/52 (pos_t089_rel) cells=116160 elapsed=481.0s
+[ Info: [positive] surface 45/52 (pos_t093_abs) cells=118800 elapsed=492.1s
+[ Info: [positive] surface 46/52 (pos_t093_rel) cells=121440 elapsed=502.3s
+[ Info: [positive] surface 47/52 (pos_t097_abs) cells=124080 elapsed=513.6s
+[ Info: [positive] surface 48/52 (pos_t097_rel) cells=126720 elapsed=524.6s
+[ Info: [positive] surface 49/52 (pos_maxOD_abs) cells=129360 elapsed=535.1s
+[ Info: [positive] surface 50/52 (pos_maxOD_rel) cells=132000 elapsed=546.4s
+[ Info: [positive] surface 51/52 (pos_od24h_abs) cells=134640 elapsed=557.6s
+[ Info: [positive] surface 52/52 (pos_od24h_rel) cells=137280 elapsed=568.9s
+┌ Info: experiment done
+│   experiment = "positive"
+│   cells = 137280
+└   seconds = 568.9
+┌ Info: running experiment
+│   experiment = "gas"
+│   surfaces = 10
+└   out = "sweep_gas.csv"
+[ Info: [gas] surface 1/10 (gas_76dbbdf0b070_abs) cells=2640 elapsed=7.5s
+[ Info: [gas] surface 2/10 (gas_76dbbdf0b070_rel) cells=5280 elapsed=19.2s
+[ Info: [gas] surface 3/10 (gas_bf22f76589cc_abs) cells=7920 elapsed=27.9s
+[ Info: [gas] surface 4/10 (gas_bf22f76589cc_rel) cells=10560 elapsed=54.2s
+[ Info: [gas] surface 5/10 (gas_629a599bd63a_abs) cells=13200 elapsed=66.5s
+[ Info: [gas] surface 6/10 (gas_629a599bd63a_rel) cells=15840 elapsed=85.0s
+[ Info: [gas] surface 7/10 (gas_e81b63326904_abs) cells=18480 elapsed=97.4s
+┌ Warning: Failed to achieve finite new evaluation point, using alpha=0
+└ @ LineSearches ~/.julia/packages/LineSearches/2BCHN/src/hagerzhang.jl:156
+[ Info: [gas] surface 8/10 (gas_e81b63326904_rel) cells=21120 elapsed=158.4s
+[ Info: [gas] surface 9/10 (gas_270f50c5980e_abs) cells=23760 elapsed=163.9s
+[ Info: [gas] surface 10/10 (gas_270f50c5980e_rel) cells=26400 elapsed=174.5s
+┌ Info: experiment done
+│   experiment = "gas"
+│   cells = 26400
+└   seconds = 174.5
+┌ Info: sweep complete
+└   time = 2026-10-09T01:42:33.622
+┌ Info:   output
+│   file = "RUN_DIFF.patch"
+└   bytes = 22639
+┌ Info:   output
+│   file = "RUN_INFO.txt"
+└   bytes = 127
+┌ Info:   output
+│   file = "archive_2026-09-04"
+└   bytes = 4096
+┌ Info:   output
+│   file = "layout_bank.jls"
+└   bytes = 264462
+┌ Info:   output
+│   file = "layouts.csv"
+└   bytes = 813128
+┌ Info:   output
+│   file = "poster_e4"
+└   bytes = 4096
+┌ Info:   output
+│   file = "surfaces.csv"
+└   bytes = 32792
+┌ Info:   output
+│   file = "sweep_gas.csv"
+└   bytes = 52514723
+┌ Info:   output
+│   file = "sweep_negative.csv"
+└   bytes = 196415631
+┌ Info:   output
+│   file = "sweep_positive.csv"
+└   bytes = 271287217
