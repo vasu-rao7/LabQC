@@ -72,13 +72,15 @@ git push            # both branches already track origin
 
 The tracked summary tables (`summary_*.csv`, `per_layout_gp.csv`, `summary_full_n.csv`) are built from them, so every figure can be redrawn without them. Regenerating them means rerunning `experiments/run_sweep.jl` and `experiments/run_full_n.jl` (the full-plate run took 26 min on 112 threads). If they need to be shared or backed up, use Git LFS or copy them off goblin.
 
-**Untracked on goblin, not committed** (they didn't come from this work; decide whether they belong in the repo):
+**Loose images in `raw_data/`.** Ignored since 2026-10-29 (`raw_data/*.png`, `raw_data/**/*.jp*g`); they exist only on goblin. Images git already tracked, such as the 2026-06-04 heatmaps, are unaffected.
 
 - `raw_data/092424_neg_control_plate{1,2}_{endpoint,heatmaps,maxOD}.png` (6 files, 2026-08-26)
 - `raw_data/2026_08_21_VR_PosControl_{endpoint_t8.5h,heatmaps,maxOD}.png` (3 files, 2026-08-26)
 - `raw_data/2026-06-04/IMG_3089.jpeg` (2026-09-04)
 
 **Old local copies:** `Glucose_Varied/` and `PlateErrorGP/` are ignored on purpose (reference copies of the 2021 project and package).
+
+`PlateErrorGP/` is its own git repo, a clone of `jensenlab/PlateErrorGP` (27 of its 32 commits are Vasu's). It has uncommitted changes that predate its copy to goblin on 2026-10-06: an edited `GP_Notebook.ipynb`, one extra `.gitignore` line, and two untracked data files that are identical to the copies in `raw_data/poster_e4/`. **Don't discard the notebook edits.** The poster reproduction in `experiments/run_poster_e4.jl` cites "cell 56" and "cell 62" of this edited version; in the committed version those cells are 55 and 61. Both versions contain the printed values. VS Code is set to hide this repo from Source Control (`git.ignoredRepositories` in `~/.vscode-server/data/Machine/settings.json`).
 
 ## Run records
 

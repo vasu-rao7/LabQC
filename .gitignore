@@ -7,3 +7,9 @@ PlateErrorGP/
 # on goblin under results/; the summary tables built from them are tracked.
 results/**/sweep_*.csv
 results/full_n/full_n.csv
+
+# Loose images in raw_data (heatmap exports and a photo); the plate data itself is tracked.
+# Images git already tracks, such as raw_data/2026-06-04/*heatmap*.png, stay tracked.
+raw_data/*.png
+raw_data/**/*.jpeg
+raw_data/**/*.jpg
