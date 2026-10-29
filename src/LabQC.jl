@@ -16,6 +16,7 @@ include("experiments/baselines.jl")
 include("experiments/layouts.jl")
 include("experiments/sweep.jl")
 include("experiments/runner.jl")
+include("experiments/poster.jl")
 
 
 export data_correction, gp_correction

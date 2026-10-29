@@ -1,0 +1,15 @@
+┌ Info: E4 loaded
+│   reads = 146
+│   hours = 24.17
+└   levels = 49
+┌ Info: poster reproduction
+│   passed = 26
+└   of = 26
+┌ Info: before/after done
+└   rows = 14
+┌ Warning: plateerrorGP: fitting 3 control wells; hyperparameters are weakly identified below ~6 controls
+└ @ LabQC ~/LabQC/src/correction/plateerrorGP.jl:41
+┌ Info: controls-needed done
+│   fits = 3510
+│   failed = 0
+└   seconds = 6.0
