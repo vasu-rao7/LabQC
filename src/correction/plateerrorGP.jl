@@ -15,8 +15,11 @@ remove, position-dependent error at every well.
 - `verbose`: also return a Dict of diagnostics, with keys `"gp"`, `"mean_error"`,
   `"var_f"` (latent posterior variance), `"var_y"` (predictive variance, including
   observation noise) and `"sd_error"` (`sqrt` of `var_f`).
-- `ls`, `lb_ls`, `ub_ls`: lengthscale of the isotropic Matern 5/2 kernel and its
-  optimisation bounds, in the same units as `pitch`.
+- `ls`, `lb_ls`, `ub_ls`: lengthscale of the Matern 5/2 kernel and its
+  optimisation bounds, in the same units as `pitch`. With `kernel = :ard`, `ls` may
+  be a `(column, row)` pair; the bounds apply to both axes.
+- `kernel`: `:iso` (default) shares one lengthscale between rows and columns;
+  `:ard` fits one per axis, as the original PlateErrorGP package did.
 - `pitch`: distance between neighbouring wells. Defaults to `1.0`, i.e. well
   indices. Pass `well_pitch(size(data)...)` to fit in mm instead — and change the
   lengthscale bounds to match, since they are expressed in the same units.
@@ -27,7 +30,8 @@ Only control wells train the model, but every well is corrected.
 """
 function plateerrorGP(data::Matrix{T}, controls::BitMatrix, correction::Function;
                       verbose = false, ls = 3.0, lb_ls = 2.0, ub_ls = 6.0,
-                      pitch = 1.0, optimize = true, kwargs...) where T <: Real
+                      pitch = 1.0, optimize = true, kernel::Symbol = :iso,
+                      kwargs...) where T <: Real
 
     ncontrols = sum(controls)
     ncontrols == 0 && error("plateerrorGP: `controls` selects no wells; " *
@@ -35,7 +39,7 @@ function plateerrorGP(data::Matrix{T}, controls::BitMatrix, correction::Function
     ncontrols < 3 && error("plateerrorGP: only $ncontrols control well(s); at least 3 are " *
                            "needed to fit a lengthscale, signal and noise")
     ncontrols < 6 && @warn "plateerrorGP: fitting $ncontrols control wells; " *
-                           "hyperparameters are weakly identified below ~6 controls"
+                           "hyperparameters are weakly identified below ~6 controls" maxlog = 1
 
     df = build_df(data, controls)
     avg_control = median(filter(row -> row.Control == 1, df).Value) #calculate median value of set of controls
@@ -48,7 +52,7 @@ function plateerrorGP(data::Matrix{T}, controls::BitMatrix, correction::Function
 
     # Fit and optimize GP model
     gp = makeGP(train_in, train_out; lengthscale = ls, lb_lengthscale = lb_ls,
-                ub_lengthscale = ub_ls, optimize = optimize, kwargs...)
+                ub_lengthscale = ub_ls, optimize = optimize, kernel = kernel, kwargs...)
 
     # Predict at every well in one call. Looping per well repeats the same
     # triangular solve once per well, which dominates runtime in large sweeps.
@@ -93,7 +97,8 @@ end
 """
     makeGP(train_in, train_out; kwargs...)
 
-Zero-mean GP with an isotropic Matern 5/2 kernel over well positions.
+Zero-mean GP with a Matern 5/2 kernel over well positions: isotropic by default,
+or with one lengthscale per axis for `kernel = :ard`.
 
 `optimize = false` skips hyperparameter fitting and uses `lengthscale`, `sd_guess`
 and `noise` as supplied. No catch-all keyword argument is accepted: a misspelled
@@ -104,27 +109,52 @@ when kernel bounds are given.
 function makeGP(train_in, train_out; lengthscale = 3.0, sd_guess = signal_guess(train_out),
                 lb_lengthscale = 2.0, ub_lengthscale = 6.0,
                 lb_std = sd_guess / 5, ub_std = sd_guess * 3,
-                noise = -2.0, optimize = true)
+                noise = -2.0, optimize = true, kernel::Symbol = :iso)
     mZero = MeanZero()
 
-    kern = Matern(5/2, log(lengthscale), log(sd_guess))
+    if kernel === :iso
+        kern = Matern(5/2, log(lengthscale), log(sd_guess))
+        lo = [log(lb_lengthscale), log(lb_std)]
+        hi = [log(ub_lengthscale), log(ub_std)]
+    elseif kernel === :ard
+        # one lengthscale per input row of `train_in`, i.e. (column, row)
+        ell = lengthscale isa Real ? fill(Float64(lengthscale), 2) : collect(Float64, lengthscale)
+        length(ell) == 2 || error("makeGP: an :ard kernel needs a (column, row) lengthscale pair")
+        kern = Matern(5/2, log.(ell), log(sd_guess))
+        lo = [log(lb_lengthscale), log(lb_lengthscale), log(lb_std)]
+        hi = [log(ub_lengthscale), log(ub_lengthscale), log(ub_std)]
+    else
+        throw(ArgumentError("kernel must be :iso or :ard, got :$kernel"))
+    end
 
     # Fit a GP model to training data
     gp = GP(train_in, train_out, mZero, kern, noise)
 
     optimize || return gp
 
-    # Define kernel bounds for GP hyperparam optimization
-    kb = [
-            [log(lb_lengthscale), log(lb_std)],   # lower bounds
-            [log(ub_lengthscale), log(ub_std)]    # upper bound
-        ]
+    # Kernel bounds for hyperparameter optimisation. GaussianProcesses does not check
+    # their length against the kernel, so a mismatch would silently misalign them.
+    length(lo) == GaussianProcesses.num_params(kern) ||
+        error("makeGP: $(length(lo)) kernel bounds for $(GaussianProcesses.num_params(kern)) parameters")
+    kb = [lo, hi]
 
     # Optimize GP
     GaussianProcesses.optimize!(gp; domean = false, kernbounds = kb)
 
     return gp
 end
+
+"""
+    lengthscales(gp) -> Vector{Float64}
+
+Fitted lengthscale(s) of a GP from [`makeGP`](@ref): one value for the isotropic
+kernel, `(column, row)` for `:ard`. Read from the parameter vector because the two
+kernel types store them under different field names.
+"""
+lengthscales(gp) = exp.(GaussianProcesses.get_params(gp.kernel)[1:end-1])
+
+"""Fitted signal standard deviation of a GP from [`makeGP`](@ref)."""
+signal_sd(gp) = exp(GaussianProcesses.get_params(gp.kernel)[end])
 
 """
     signal_guess(train_out) -> Float64

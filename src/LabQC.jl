@@ -24,7 +24,7 @@ export control_summary
 export read_endpoint_grids, read_kinetic, transient_reads, grid_hash
 export well_pitch
 export skill, rmse, mae, bias, spearman, coverage, variance_decomposition
-export error_target, baseline_methods
+export error_target, baseline_methods, lengthscales, signal_sd
 export generate_layouts, fixed_hybrid_bounds, layout_geometry, layout_scores
 export Surface, truth_surface, sweep_cell
 export build_surfaces, default_objectives, layout_bank, run_experiment, EXPERIMENTS

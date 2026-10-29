@@ -86,3 +86,33 @@ end
     corrected = gp_correction(DATA, plate; passes = :technical)
     @test std(corrected) < 0.5 * std(DATA)
 end
+
+@testset "default kernel is unchanged by the kernel option" begin
+    # golden values captured at commit 6755b12, before `kernel` existed
+    golden = Dict{Tuple{String,String,Int,Int},Float64}()
+    for line in eachline(joinpath(@__DIR__, "golden", "plateerrorGP_iso.txt"))
+        startswith(line, "#") && continue
+        case, key, i, j, v = split(line, '\t')
+        golden[(case, key, parse(Int, i), parse(Int, j))] = parse(Float64, v)
+    end
+    neg, pos = split_masks()
+    for (case, mask, corr) in (("neg_absolute", neg, absolute), ("pos_relative", pos, relative))
+        corrected, d = plateerrorGP(DATA, mask, corr; verbose = true)
+        for (key, M) in (("corrected", corrected), ("mean_error", d["mean_error"]),
+                         ("var_f", d["var_f"]), ("var_y", d["var_y"]))
+            @test all(M[i, j] === golden[(case, key, i, j)] for i in 1:R, j in 1:C)
+        end
+    end
+end
+
+@testset "per-axis (ARD) kernel" begin
+    neg, _ = split_masks()
+    _, d = plateerrorGP(DATA, neg, absolute; verbose = true, kernel = :ard, ls = (4.0, 3.0))
+    gp = d["gp"]
+    @test length(LabQC.lengthscales(gp)) == 2
+    @test all(2.0 - 1e-6 .<= LabQC.lengthscales(gp) .<= 6.0 + 1e-6)
+    _, d_iso = plateerrorGP(DATA, neg, absolute; verbose = true)
+    @test length(LabQC.lengthscales(d_iso["gp"])) == 1
+    @test LabQC.signal_sd(d_iso["gp"]) ≈ sqrt(d_iso["gp"].kernel.σ2)
+    @test_throws ArgumentError plateerrorGP(DATA, neg, absolute; kernel = :nonsense)
+end
