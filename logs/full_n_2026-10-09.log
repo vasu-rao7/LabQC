@@ -1,0 +1,107 @@
+┌ Info: full-n run starting
+│   time = 2026-10-09T11:26:01.591
+│   threads = 112
+│   ns = (3, 96, 94)
+└   nlayouts = 30
+┌ Info: surfaces
+└   total = 55
+┌ Info: fits to run
+└   tasks = 157135
+┌ Warning: plateerrorGP: fitting 3 control wells; hyperparameters are weakly identified below ~6 controls
+└ @ LabQC ~/LabQC/src/correction/plateerrorGP.jl:41
+┌ Info: progress
+│   done = 7856
+│   of = 157135
+└   elapsed_s = 40.4
+┌ Info: progress
+│   done = 15712
+│   of = 157135
+└   elapsed_s = 74.4
+┌ Info: progress
+│   done = 23568
+│   of = 157135
+└   elapsed_s = 109.1
+┌ Info: progress
+│   done = 31424
+│   of = 157135
+└   elapsed_s = 143.6
+┌ Info: progress
+│   done = 39280
+│   of = 157135
+└   elapsed_s = 179.4
+┌ Info: progress
+│   done = 47136
+│   of = 157135
+└   elapsed_s = 216.3
+┌ Warning: Failed to achieve finite new evaluation point, using alpha=0
+└ @ LineSearches ~/.julia/packages/LineSearches/2BCHN/src/hagerzhang.jl:156
+┌ Info: progress
+│   done = 54992
+│   of = 157135
+└   elapsed_s = 253.1
+┌ Info: progress
+│   done = 62848
+│   of = 157135
+└   elapsed_s = 291.7
+┌ Info: progress
+│   done = 70704
+│   of = 157135
+└   elapsed_s = 332.0
+┌ Info: progress
+│   done = 78560
+│   of = 157135
+└   elapsed_s = 373.5
+┌ Info: progress
+│   done = 86416
+│   of = 157135
+└   elapsed_s = 421.3
+┌ Info: progress
+│   done = 94272
+│   of = 157135
+└   elapsed_s = 471.6
+┌ Info: progress
+│   done = 102128
+│   of = 157135
+└   elapsed_s = 522.1
+┌ Info: progress
+│   done = 109984
+│   of = 157135
+└   elapsed_s = 575.8
+┌ Info: progress
+│   done = 117840
+│   of = 157135
+└   elapsed_s = 632.5
+┌ Info: progress
+│   done = 125696
+│   of = 157135
+└   elapsed_s = 690.3
+┌ Info: progress
+│   done = 133552
+│   of = 157135
+└   elapsed_s = 749.8
+┌ Info: progress
+│   done = 141408
+│   of = 157135
+└   elapsed_s = 809.7
+┌ Info: progress
+│   done = 149264
+│   of = 157135
+└   elapsed_s = 864.2
+┌ Warning: Failed to achieve finite new evaluation point, using alpha=0
+└ @ LineSearches ~/.julia/packages/LineSearches/2BCHN/src/hagerzhang.jl:156
+┌ Warning: Failed to achieve finite new evaluation point, using alpha=0
+└ @ LineSearches ~/.julia/packages/LineSearches/2BCHN/src/hagerzhang.jl:156
+┌ Warning: Failed to achieve finite new evaluation point, using alpha=0
+└ @ LineSearches ~/.julia/packages/LineSearches/2BCHN/src/hagerzhang.jl:156
+┌ Warning: Failed to achieve finite new evaluation point, using alpha=0
+└ @ LineSearches ~/.julia/packages/LineSearches/2BCHN/src/hagerzhang.jl:156
+┌ Warning: Failed to achieve finite new evaluation point, using alpha=0
+└ @ LineSearches ~/.julia/packages/LineSearches/2BCHN/src/hagerzhang.jl:156
+┌ Info: progress
+│   done = 157120
+│   of = 157135
+└   elapsed_s = 1558.4
+┌ Info: full-n run complete
+│   rows = 785675
+│   failed = 0
+└   seconds = 1562.6
