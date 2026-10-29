@@ -1,3 +1,9 @@
 # Older copies of this project, kept locally for reference only
 Glucose_Varied/
 PlateErrorGP/
+
+# Raw per-cell sweep tables, 43-260 MB each: over GitHub's 100 MB file limit, and
+# regenerable with experiments/run_sweep.jl and experiments/run_full_n.jl. They stay
+# on goblin under results/; the summary tables built from them are tracked.
+results/**/sweep_*.csv
+results/full_n/full_n.csv
