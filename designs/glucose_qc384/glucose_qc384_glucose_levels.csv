@@ -1,0 +1,27 @@
+Glucose_g_per_L,Glucose_percent_w_v,Well_Type,Wells,Where
+0.0,0.0,negative_control,120,BL well of every block + TR/BR wells of the 12 negative control blocks
+0.4,0.04,test,6,TR/BR wells of 3 test blocks
+0.8,0.08,test,6,TR/BR wells of 3 test blocks
+1.2,0.12,test,6,TR/BR wells of 3 test blocks
+1.6,0.16,test,6,TR/BR wells of 3 test blocks
+2.0,0.2,test,6,TR/BR wells of 3 test blocks
+2.4,0.24,test,6,TR/BR wells of 3 test blocks
+2.8,0.28,test,6,TR/BR wells of 3 test blocks
+3.2,0.32,test,6,TR/BR wells of 3 test blocks
+3.6,0.36,test,6,TR/BR wells of 3 test blocks
+4.0,0.4,test,6,TR/BR wells of 3 test blocks
+4.4,0.44,test,6,TR/BR wells of 3 test blocks
+4.8,0.48,test,6,TR/BR wells of 3 test blocks
+5.2,0.52,test,6,TR/BR wells of 3 test blocks
+5.6,0.56,test,6,TR/BR wells of 3 test blocks
+6.0,0.6,test,6,TR/BR wells of 3 test blocks
+6.4,0.64,test,6,TR/BR wells of 3 test blocks
+6.8,0.68,test,6,TR/BR wells of 3 test blocks
+7.2,0.72,test,6,TR/BR wells of 3 test blocks
+7.6,0.76,test,6,TR/BR wells of 3 test blocks
+8.0,0.8,test,6,TR/BR wells of 3 test blocks
+8.4,0.84,test,6,TR/BR wells of 3 test blocks
+8.8,0.88,test,6,TR/BR wells of 3 test blocks
+9.2,0.92,test,6,TR/BR wells of 3 test blocks
+9.6,0.96,test,6,TR/BR wells of 3 test blocks
+10.0,1.0,positive_control,120,TL well of every block + TR/BR wells of the 12 positive control blocks
