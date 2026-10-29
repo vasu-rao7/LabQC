@@ -732,7 +732,7 @@ uuid = "b964fa9f-0449-5b57-a5c2-d3ea65f4040f"
 version = "1.4.0"
 
 [[deps.LabQC]]
-deps = ["CSV", "CategoricalArrays", "DataFrames", "Dates", "GaussianProcesses", "LinearAlgebra", "PlateArrays", "Plots", "Random", "SHA", "Statistics", "StatsBase", "XLSX"]
+deps = ["CSV", "CategoricalArrays", "DataFrames", "Dates", "GaussianProcesses", "LinearAlgebra", "PlateArrays", "Plots", "Random", "SHA", "Serialization", "Statistics", "StatsBase", "XLSX"]
 path = "."
 uuid = "bf7802ce-d241-4265-a8b6-de29616c74d0"
 version = "0.1.0"
